@@ -120,9 +120,9 @@ if __name__ == '__main__':
     parser.add_argument('--datadir', help='override config.BASEDIR')
     parser.add_argument('--visualize', action='store_true', help='visualize intermediate results')
     parser.add_argument('--evaluate', help="Run evaluation on COCO. "
-                                           "This argument is the path to the output json evaluation file")
+                                           "This argument is the path to the output json evaluation file", default=False)
     parser.add_argument('--predict', help="Run prediction on a given image. "
-                                          "This argument is the path to the input image file")
+                                          "This argument is the path to the input image file", default=False)
     args = parser.parse_args()
     
     if args.datadir:
