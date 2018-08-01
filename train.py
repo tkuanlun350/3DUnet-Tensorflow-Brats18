@@ -18,8 +18,8 @@ import tensorpack.utils.viz as tpviz
 from tensorpack.utils.gpu import get_nr_gpu
 import config
 from model import ( unet3d, Loss )
-from data_sampler import (get_train_dataflow, get_eval_dataflow)
-from eval import (eval_brats, segment_one_image)
+from data_sampler import (get_train_dataflow, get_eval_dataflow, get_test_dataflow)
+from eval import (eval_brats, pred_brats, segment_one_image, segment_one_image_dynamic)
 
 def get_batch_factor():
     nr_gpu = get_nr_gpu()
@@ -32,12 +32,13 @@ def get_model_output_names():
     return ret
 
 
-def get_model(modelType="training"):
-    return Unet3dModel(modelType=modelType)
+def get_model(modelType="training", inference_shape=config.PATCH_SIZE):
+    return Unet3dModel(modelType=modelType, inference_shape=inference_shape)
 
 class Unet3dModel(ModelDesc):
-    def __init__(self, modelType="training"):
+    def __init__(self, modelType="training", inference_shape=config.PATCH_SIZE):
         self.modelType = modelType
+        self.inference_shape = inference_shape
         print(self.modelType)
 
     def optimizer(self):
@@ -58,8 +59,9 @@ class Unet3dModel(ModelDesc):
                 tf.placeholder(tf.float32, (config.BATCH_SIZE, S[0], S[1], S[2], 1), 'weight'),
                 tf.placeholder(tf.float32, (config.BATCH_SIZE, S[0], S[1], S[2], 1), 'label')]
         else:
+            S = self.inference_shape
             ret = [
-                tf.placeholder(tf.float32, (1, S[0], 240, 240, 4), 'image')]
+                tf.placeholder(tf.float32, (config.BATCH_SIZE, S[0], S[1], S[2], 4), 'image')]
         return ret
 
     def build_graph(self, *inputs):
@@ -84,33 +86,34 @@ class Unet3dModel(ModelDesc):
             final_probs = tf.nn.softmax(featuremap, name="final_probs") #[b,d,h,w,num_class]
             final_pred = tf.argmax(final_probs, axis=-1, name="final_pred")
 
-# Not support online eval yet
 class EvalCallback(Callback):
     def _setup_graph(self):
         self.pred = self.trainer.get_predictor(
             ['image'], get_model_output_names())
         self.df = get_eval_dataflow()
     
-    def _before_train(self):
-        EVAL_TIMES = 5  # eval 5 times during training
-        interval = self.trainer.max_epoch // (EVAL_TIMES + 1)
-        self.epochs_to_eval = set([interval * k for k in range(1, EVAL_TIMES + 1)])
-        self.epochs_to_eval.add(self.trainer.max_epoch)
-
     def _eval(self):
-        scores = eval_brats(self.df, lambda img: segment_one_image(img, self.pred))
+        scores = eval_brats(self.df, lambda img: segment_one_image(img, [self.pred]))
         for k, v in scores.items():
             self.trainer.monitors.put_scalar(k, v)
 
     def _trigger_epoch(self):
-        #if self.epoch_num > 0 and self.epoch_num % 10 == 0:
-        self._eval()
+        if self.epoch_num > 0 and self.epoch_num % config.EVAL_EPOCH == 0:
+            self._eval()
 
 def offline_evaluate(pred_func, output_file):
         df = get_eval_dataflow()
-        all_results = eval_brats(
-            df, lambda img: segment_one_image(img, pred_func))
-        
+        if config.DYNAMIC_SHAPE_PRED:    
+            eval_brats(
+                df, lambda img: segment_one_image_dynamic(img, [pred_func]))
+        else:
+            eval_brats(
+                df, lambda img: segment_one_image(img, [pred_func]))
+
+def offline_pred(pred_func, output_file):
+        df = get_test_dataflow()
+        pred_brats(
+            df, lambda img: segment_one_image(img, [pred_func]))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -119,9 +122,8 @@ if __name__ == '__main__':
     parser.add_argument('--logdir', help='log directory', default='train_log/unet3d')
     parser.add_argument('--datadir', help='override config.BASEDIR')
     parser.add_argument('--visualize', action='store_true', help='visualize intermediate results')
-    parser.add_argument('--evaluate', help="Run evaluation on COCO. "
-                                           "This argument is the path to the output json evaluation file", default=False)
-    parser.add_argument('--predict', help="Run prediction on a given image. "
+    parser.add_argument('--evaluate', action='store_true', help="Run evaluation")
+    parser.add_argument('--predict', action='store_true', help="Run prediction on a given image. "
                                           "This argument is the path to the input image file", default=False)
     args = parser.parse_args()
     
@@ -131,7 +133,27 @@ if __name__ == '__main__':
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    if args.visualize or args.evaluate or args.predict:
+    if args.visualize or args.evaluate:
+        if config.DYNAMIC_SHAPE_PRED:
+            def get_dynamic_pred(shape):
+                return OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference", inference_shape=shape),
+                    session_init=get_model_loader(args.load),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            offline_evaluate(get_dynamic_pred, args.evaluate)
+        else:
+            pred = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader(args.load),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            # autotune is too slow for inference
+            os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
+            assert args.load
+            offline_evaluate(pred, args.evaluate)
+    
+    elif args.predict:
         pred = OfflinePredictor(PredictConfig(
                 model=get_model(modelType="inference"),
                 session_init=get_model_loader(args.load),
@@ -140,12 +162,12 @@ if __name__ == '__main__':
         # autotune is too slow for inference
         os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
         assert args.load
-        offline_evaluate(pred, args.evaluate)
+        offline_pred(pred, args.evaluate)
         
     else:
         logger.set_logger_dir(args.logdir)
         factor = get_batch_factor()
-        stepnum = 500
+        stepnum = config.STEP_PER_EPOCH
         
         cfg = TrainConfig(
             model=get_model(),
@@ -155,17 +177,17 @@ if __name__ == '__main__':
                     ModelSaver(max_to_keep=10, keep_checkpoint_every_n_hours=1),
                     every_k_epochs=20),
                 ScheduledHyperParamSetter('learning_rate', 
-                    [(100, config.BASE_LR*0.1),
-                    (200, config.BASE_LR*0.01)]
+                    [(40, config.BASE_LR*0.1),
+                    (60, config.BASE_LR*0.01)]
                 ),
-                #EvalCallback(),
+                EvalCallback(),
                 GPUUtilizationTracker(),
                 PeakMemoryTracker(),
                 EstimatedTimeLeft(),
                 SessionRunTimeout(60000),   # 1 minute timeout
             ],
             steps_per_epoch=stepnum,
-            max_epoch=200,
+            max_epoch=80,
             session_init=get_model_loader(args.load) if args.load else None,
         )
         # nccl mode gives the best speed

@@ -9,20 +9,12 @@ import os, sys
 from tqdm import tqdm
 from tensorpack.utils.argtools import memoized, log_once
 from tensorpack.dataflow import (
-    BatchData, MapData, imgaug, TestDataSpeed, MultiProcessMapData,
+    BatchData, MapData, TestDataSpeed, MultiProcessMapData,
     MapDataComponent, DataFromList, PrefetchDataZMQ)
-import tensorpack.utils.viz as tpviz
-"""
-from utils.np_box_ops import iou as np_iou
-from utils.np_box_ops import area as np_area
-from utils.generate_anchors import generate_anchors
-from utils.box_ops import get_iou_callable
-"""
 from  data_loader import BRATS_SEG
 import config
 from tensorpack.dataflow import RNGDataFlow
 import nibabel
-import SimpleITK as sitk
 import random
 import time
 from utils import *
@@ -44,6 +36,28 @@ class DataFromListOfDict(RNGDataFlow):
             dp = [dic[k] for k in self._keys]
             yield dp
 
+def crop_brain_region(im, gt):
+    mods = sorted(im.keys())
+    volume_list = []
+    for mod_idx, mod in enumerate(mods):
+        filename = im[mod]
+        volume = load_nifty_volume_as_array(filename, with_header=False)
+        # 155 244 244
+        if mod_idx == 0:
+            # contain whole tumor
+            margin = 5 # small padding value
+            bbmin, bbmax = get_none_zero_region(volume, margin)
+        volume = crop_ND_volume_with_bounding_box(volume, bbmin, bbmax)
+        if mod_idx == 0:
+            weight = np.asarray(volume > 0, np.float32)
+        if config.INTENSITY_NORM == 'modality':
+            volume = itensity_normalize_one_volume(volume)
+        volume_list.append(volume)
+    ## volume_list [(depth, h, w)*4]
+    label = load_nifty_volume_as_array(gt, False)
+    label = crop_ND_volume_with_bounding_box(label, bbmin, bbmax)
+
+    return volume_list, label, weight
 
 def sampler3d(im, gt, with_gt=True):
     """
@@ -123,6 +137,14 @@ def sampler3d_whole(im):
     for mod_idx, mod in enumerate(mods):
         filename = im[mod]
         volume = load_nifty_volume_as_array(filename, with_header=False)
+        if mod_idx == 0:
+            # contain whole tumor
+            margin = 5 # small padding value
+            original_shape = volume.shape
+            bbmin, bbmax = get_none_zero_region(volume, margin)
+        volume = crop_ND_volume_with_bounding_box(volume, bbmin, bbmax)
+        if mod_idx == 0:
+            weight = np.asarray(volume > 0, np.float32)
         if config.INTENSITY_NORM == 'modality':
             volume = itensity_normalize_one_volume(volume)        
         volume_list.append(volume)
@@ -130,6 +152,9 @@ def sampler3d_whole(im):
     batch = {}
     axis = [1,2,3,0] #[1,2,3,0] [d, h, w, modalities]
     batch['images']  = np.transpose(sub_data, axis)
+    batch['weights'] = np.transpose(weight[np.newaxis, ...], axis)
+    batch['original_shape'] = original_shape
+    batch['bbox'] = [bbmin, bbmax]
     
     return batch
 
@@ -157,7 +182,19 @@ def get_train_dataflow(add_mask=True):
     return ds
 
 def get_eval_dataflow():
-    imgs = BRATS_SEG.load_many(config.BASEDIR, config.VAL_DATASET, add_gt=False)
+    imgs = BRATS_SEG.load_eval_from_file(config.BASEDIR, config.VAL_DATASET)
+    # no filter for training
+    ds = DataFromListOfDict(imgs, ['file_name', 'id', 'image_data'])
+
+    def f(data):
+        batch = sampler3d_whole(data)
+        return batch
+    ds = MapDataComponent(ds, f, 2)
+    ds = PrefetchDataZMQ(ds, 1)
+    return ds
+
+def get_test_dataflow():
+    imgs = BRATS_SEG.load_many(config.BASEDIR, config.TEST_DATASET, add_gt=False)
     # no filter for training
     ds = DataFromListOfDict(imgs, ['file_name', 'id', 'image_data'])
 

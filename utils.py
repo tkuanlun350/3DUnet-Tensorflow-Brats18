@@ -8,6 +8,202 @@ import random
 import os
 import SimpleITK as sitk
 import pickle
+from scipy import ndimage
+
+def transpose_volumes(volumes, slice_direction):
+    """
+    transpose a list of volumes
+    inputs:
+        volumes: a list of nd volumes
+        slice_direction: 'axial', 'sagittal', or 'coronal'
+    outputs:
+        tr_volumes: a list of transposed volumes
+    """
+    if (slice_direction == 'axial'):
+        tr_volumes = volumes
+    elif(slice_direction == 'sagittal'):
+        if isinstance(volumes, list) or len(volumes.shape) > 3:
+            tr_volumes = [np.transpose(x, (2, 0, 1)) for x in volumes]
+        else:
+            tr_volumes = np.transpose(volumes, (2, 0, 1))
+    elif(slice_direction == 'coronal'):
+        if isinstance(volumes, list) or len(volumes.shape) > 3:
+            tr_volumes = [np.transpose(x, (1, 0, 2)) for x in volumes]
+        else:
+            tr_volumes = np.transpose(volumes, (1, 0, 2))
+    else:
+        print('undefined slice direction:', slice_direction)
+        tr_volumes = volumes
+    return tr_volumes
+
+def remove_external_core(lab_main, lab_ext):
+    """
+    remove the core region that is outside of whole tumor
+    """
+    
+    # for each component of lab_ext, compute the overlap with lab_main
+    s = ndimage.generate_binary_structure(3,2) # iterate structure
+    labeled_array, numpatches = ndimage.label(lab_ext,s) # labeling
+    sizes = ndimage.sum(lab_ext,labeled_array,range(1,numpatches+1)) 
+    sizes_list = [sizes[i] for i in range(len(sizes))]
+    new_lab_ext = np.zeros_like(lab_ext)
+    for i in range(len(sizes)):
+        sizei = sizes_list[i]
+        labeli =  np.where(sizes == sizei)[0] + 1
+        componenti = labeled_array == labeli
+        overlap = componenti * lab_main
+        if((overlap.sum()+ 0.0)/sizei >= 0.5):
+            new_lab_ext = np.maximum(new_lab_ext, componenti)
+    return new_lab_ext
+
+
+def get_largest_two_component(img, print_info = False, threshold = None):
+    """
+    Get the largest two components of a binary volume
+    inputs:
+        img: the input 3D volume
+        threshold: a size threshold
+    outputs:
+        out_img: the output volume 
+    """
+    s = ndimage.generate_binary_structure(3,2) # iterate structure
+    labeled_array, numpatches = ndimage.label(img,s) # labeling
+    sizes = ndimage.sum(img,labeled_array,range(1,numpatches+1)) 
+    sizes_list = [sizes[i] for i in range(len(sizes))]
+    sizes_list.sort()
+    if(print_info):
+        print('component size', sizes_list)
+    if(len(sizes) == 1):
+        out_img = img
+    else:
+        if(threshold):
+            out_img = np.zeros_like(img)
+            for temp_size in sizes_list:
+                if(temp_size > threshold):
+                    temp_lab = np.where(sizes == temp_size)[0] + 1
+                    temp_cmp = labeled_array == temp_lab
+                    out_img = (out_img + temp_cmp) > 0
+            return out_img
+        else:    
+            max_size1 = sizes_list[-1]
+            max_size2 = sizes_list[-2]
+            max_label1 = np.where(sizes == max_size1)[0] + 1
+            max_label2 = np.where(sizes == max_size2)[0] + 1
+            component1 = labeled_array == max_label1
+            component2 = labeled_array == max_label2
+            if(max_size2*10 > max_size1):
+                component1 = (component1 + component2) > 0
+            out_img = component1
+    return out_img
+
+def get_ND_bounding_box(label, margin):
+    """
+    get the bounding box of the non-zero region of an ND volume
+    """
+    input_shape = label.shape
+    if(type(margin) is int ):
+        margin = [margin]*len(input_shape)
+    assert(len(input_shape) == len(margin))
+    indxes = np.nonzero(label)
+    idx_min = []
+    idx_max = []
+    for i in range(len(input_shape)):
+        idx_min.append(indxes[i].min())
+        idx_max.append(indxes[i].max())
+
+    for i in range(len(input_shape)):
+        idx_min[i] = max(idx_min[i] - margin[i], 0)
+        idx_max[i] = min(idx_max[i] + margin[i], input_shape[i] - 1)
+    return idx_min, idx_max
+
+def set_ND_volume_roi_with_bounding_box_range(volume, bb_min, bb_max, sub_volume):
+    """
+    set a subregion to an nd image.
+    """
+    dim = len(bb_min)
+    out = volume
+    if(dim == 2):
+        out[np.ix_(range(bb_min[0], bb_max[0] + 1),
+                   range(bb_min[1], bb_max[1] + 1))] = sub_volume
+    elif(dim == 3):
+        out[np.ix_(range(bb_min[0], bb_max[0] + 1),
+                   range(bb_min[1], bb_max[1] + 1),
+                   range(bb_min[2], bb_max[2] + 1))] = sub_volume
+    elif(dim == 4):
+        out[np.ix_(range(bb_min[0], bb_max[0] + 1),
+                   range(bb_min[1], bb_max[1] + 1),
+                   range(bb_min[2], bb_max[2] + 1),
+                   range(bb_min[3], bb_max[3] + 1))] = sub_volume
+    else:
+        raise ValueError("array dimension should be 2, 3 or 4")
+    return out
+
+
+def convert_label(in_volume, label_convert_source, label_convert_target):
+    """
+    convert the label value in a volume
+    inputs:
+        in_volume: input nd volume with label set label_convert_source
+        label_convert_source: a list of integers denoting input labels, e.g., [0, 1, 2, 4]
+        label_convert_target: a list of integers denoting output labels, e.g.,[0, 1, 2, 3]
+    outputs:
+        out_volume: the output nd volume with label set label_convert_target
+    """
+    mask_volume = np.zeros_like(in_volume)
+    convert_volume = np.zeros_like(in_volume)
+    for i in range(len(label_convert_source)):
+        source_lab = label_convert_source[i]
+        target_lab = label_convert_target[i]
+        if(source_lab != target_lab):
+            temp_source = np.asarray(in_volume == source_lab)
+            temp_target = target_lab * temp_source
+            mask_volume = mask_volume + temp_source
+            convert_volume = convert_volume + temp_target
+    out_volume = in_volume * 1
+    out_volume[mask_volume>0] = convert_volume[mask_volume>0]
+    return out_volume
+
+def set_roi_to_volume(volume, center, sub_volume):
+    """
+    set the content of an roi of a 3d/4d volume to a sub volume
+    inputs:
+        volume: the input 3D/4D volume
+        center: the center of the roi
+        sub_volume: the content of sub volume
+    outputs:
+        output_volume: the output 3D/4D volume
+    """
+    volume_shape = volume.shape   
+    patch_shape = sub_volume.shape
+    output_volume = volume
+    for i in range(len(center)):
+        if(center[i] >= volume_shape[i]):
+            return output_volume
+    r0max = [int(x/2) for x in patch_shape]
+    r1max = [patch_shape[i] - r0max[i] for i in range(len(r0max))]
+    r0 = [min(r0max[i], center[i]) for i in range(len(r0max))]
+    r1 = [min(r1max[i], volume_shape[i] - center[i]) for i in range(len(r0max))]
+    patch_center = r0max
+
+    if(len(center) == 3):
+        output_volume[np.ix_(range(center[0] - r0[0], center[0] + r1[0]),
+                             range(center[1] - r0[1], center[1] + r1[1]),
+                             range(center[2] - r0[2], center[2] + r1[2]))] = \
+            sub_volume[np.ix_(range(patch_center[0] - r0[0], patch_center[0] + r1[0]),
+                              range(patch_center[1] - r0[1], patch_center[1] + r1[1]),
+                              range(patch_center[2] - r0[2], patch_center[2] + r1[2]))]
+    elif(len(center) == 4):
+        output_volume[np.ix_(range(center[0] - r0[0], center[0] + r1[0]),
+                             range(center[1] - r0[1], center[1] + r1[1]),
+                             range(center[2] - r0[2], center[2] + r1[2]),
+                             range(center[3] - r0[3], center[3] + r1[3]))] = \
+            sub_volume[np.ix_(range(patch_center[0] - r0[0], patch_center[0] + r1[0]),
+                              range(patch_center[1] - r0[1], patch_center[1] + r1[1]),
+                              range(patch_center[2] - r0[2], patch_center[2] + r1[2]),
+                              range(patch_center[3] - r0[3], patch_center[3] + r1[3]))]
+    else:
+        raise ValueError("array dimension should be 3 or 4")        
+    return output_volume  
 
 def binary_dice3d(s,g):
     """
