@@ -127,7 +127,34 @@ def segment_one_image_dynamic(data, create_model_func):
     pred1 = pred1 * temp_weight # clear non-brain region
     # pred1 should be the same as cropped brain region
     # now fill the croped region with our prediction
-    out_label = np.asarray(pred1, np.int16)
+    pred_whole = np.zeros_like(pred1)
+    pred_core = np.zeros_like(pred1)
+    pred_enhancing = np.zeros_like(pred1)
+    pred_whole[pred1 > 0] = 1
+    pred1[pred1 == 2] = 0
+    pred_core[pred1 > 0] = 1
+    pred_enhancing[pred1 == 4]  = 1
+    
+    pred_whole = ndimage.morphology.binary_closing(pred_whole, structure = struct)
+    pred_whole = get_largest_two_component(pred_whole, False, wt_threshold)
+    #bbox1 = get_ND_bounding_box(pred1_lc, margin)
+    #sub_imgs = [crop_ND_volume_with_bounding_box(one_img, bbox1[0], bbox1[1]) for one_img in temp_imgs]
+    sub_weight = np.zeros_like(temp_weight)
+    sub_weight[pred_whole > 0] = 1
+    pred_core = pred_core * sub_weight
+    pred_core = ndimage.morphology.binary_closing(pred_core, structure = struct)
+    pred_core = get_largest_two_component(pred_core, False, wt_threshold)
+
+    subsub_weight = np.zeros_like(temp_weight)
+    subsub_weight[pred_core > 0] = 1
+    pred_enhancing = pred_enhancing * subsub_weight
+    vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
+    if(0 < vox_3 and vox_3 < 30):
+        pred_enhancing = np.zeros_like(pred_enhancing)
+    out_label = pred_whole * 2
+    out_label[pred_core>0] = 1
+    out_label[pred_enhancing>0] = 4
+    out_label = np.asarray(out_label, np.int16)
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
     final_probs = prob1_ax # no-use for now
@@ -179,8 +206,37 @@ def segment_one_image(data, model_func):
     
     pred1 = pred1 * temp_weight # clear non-brain region
     # pred1 should be the same as cropped brain region
-    # now fill the croped region with our prediction
-    out_label = np.asarray(pred1, np.int16)
+    if config.ADVANCE_POSTPROCESSING:
+        pred_whole = np.zeros_like(pred1)
+        pred_core = np.zeros_like(pred1)
+        pred_enhancing = np.zeros_like(pred1)
+        pred_whole[pred1 > 0] = 1
+        pred1[pred1 == 2] = 0
+        pred_core[pred1 > 0] = 1
+        pred_enhancing[pred1 == 4] = 1
+
+        pred_whole = ndimage.morphology.binary_closing(pred_whole, structure = struct)
+        pred_whole = get_largest_two_component(pred_whole, False, wt_threshold)
+
+        sub_weight = np.zeros_like(temp_weight)
+        sub_weight[pred_whole > 0] = 1
+        pred_core = pred_core * sub_weight
+        pred_core = ndimage.morphology.binary_closing(pred_core, structure = struct)
+        pred_core = get_largest_two_component(pred_core, False, wt_threshold)
+
+        subsub_weight = np.zeros_like(temp_weight)
+        subsub_weight[pred_core > 0] = 1
+        pred_enhancing = pred_enhancing * subsub_weight
+        vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
+        if(0 < vox_3 and vox_3 < 100):
+            pred_enhancing = np.zeros_like(pred_enhancing)
+        out_label = pred_whole * 2
+        out_label[pred_core>0] = 1
+        out_label[pred_enhancing>0] = 4
+    else:
+        pred1[pred1 == 3] = 4
+        out_label = pred1
+    out_label = np.asarray(out_label, np.int16)
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
     final_probs = prob1_ax # no-use for now

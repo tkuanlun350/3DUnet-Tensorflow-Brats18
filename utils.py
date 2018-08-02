@@ -9,6 +9,35 @@ import os
 import SimpleITK as sitk
 import pickle
 from scipy import ndimage
+import config
+
+def crop_brain_region(im, gt, with_gt=True):
+    mods = sorted(im.keys())
+    volume_list = []
+    for mod_idx, mod in enumerate(mods):
+        filename = im[mod]
+        volume = load_nifty_volume_as_array(filename, with_header=False)
+        # 155 244 244
+        if mod_idx == 0:
+            # contain whole tumor
+            margin = 5 # small padding value
+            original_shape = volume.shape
+            bbmin, bbmax = get_none_zero_region(volume, margin)
+        volume = crop_ND_volume_with_bounding_box(volume, bbmin, bbmax)
+        if mod_idx == 0:
+            weight = np.asarray(volume > 0, np.float32)
+        if config.INTENSITY_NORM == 'modality':
+            volume = itensity_normalize_one_volume(volume)
+        volume_list.append(volume)
+    ## volume_list [(depth, h, w)*4]
+    if with_gt:
+        label = load_nifty_volume_as_array(gt, False)
+        label[label == 4] = 3
+        label = crop_ND_volume_with_bounding_box(label, bbmin, bbmax)
+
+        return volume_list, label, weight, original_shape, [bbmin, bbmax]
+    else:
+        return volume_list, None, weight, original_shape, [bbmin, bbmax]
 
 def transpose_volumes(volumes, slice_direction):
     """

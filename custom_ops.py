@@ -25,6 +25,62 @@ __all__ = ['BatchNorm', 'BatchRenorm']
 # decay: being too close to 1 leads to slow start-up. torch use 0.9.
 # eps: torch: 1e-5. Lasagne: 1e-4
 
+@layer_register()
+def InstanceNorm5d(x, epsilon=1e-5, use_affine=True, gamma_init=None, data_format='channels_last'):
+    """
+    Instance Normalization, as in the paper:
+    `Instance Normalization: The Missing Ingredient for Fast Stylization
+    <https://arxiv.org/abs/1607.08022>`_.
+    Args:
+        x (tf.Tensor): a 4D tensor.
+        epsilon (float): avoid divide-by-zero
+        use_affine (bool): whether to apply learnable affine transformation
+    """
+    data_format = get_data_format(data_format, tfmode=False)
+    shape = x.get_shape().as_list()
+    # assert len(shape) == 4, "Input of InstanceNorm has to be 4D!"
+    if len(shape) == 5:
+        if data_format == 'NHWC':
+            axis = [1, 2, 3]
+            ch = shape[4]
+            new_shape = [1, 1, 1, 1, ch]
+        else:
+            axis = [2, 3, 4]
+            ch = shape[1]
+            new_shape = [1, ch, 1, 1, 1]
+    else:
+        if data_format == 'NHWC':
+            axis = [1, 2]
+            ch = shape[3]
+            new_shape = [1, 1, 1, ch]
+        else:
+            axis = [2, 3]
+            ch = shape[1]
+            new_shape = [1, ch, 1, 1]
+    assert ch is not None, "Input of InstanceNorm require known channel!"
+
+    mean, var = tf.nn.moments(x, axis, keep_dims=True)
+
+    if not use_affine:
+        return tf.divide(x - mean, tf.sqrt(var + epsilon), name='output')
+
+    beta = tf.get_variable('beta', [ch], initializer=tf.constant_initializer())
+    beta = tf.reshape(beta, new_shape)
+    if gamma_init is None:
+        gamma_init = tf.constant_initializer(1.0)
+    gamma = tf.get_variable('gamma', [ch], initializer=gamma_init)
+    gamma = tf.reshape(gamma, new_shape)
+    ret = tf.nn.batch_normalization(x, mean, var, beta, gamma, epsilon, name='output')
+
+    vh = ret.variables = VariableHolder()
+    if use_affine:
+        vh.gamma = gamma
+        vh.beta = beta
+    return ret
+
+
+
+
 def rename_get_variable(mapping):
     """
     Args:

@@ -20,6 +20,7 @@ import config
 import cv2
 import skimage
 import nibabel
+from utils import crop_brain_region
 
 class BRATS_SEG(object):
     def __init__(self, basedir, mode):
@@ -31,9 +32,9 @@ class BRATS_SEG(object):
         self.mode = mode
     
     def load_5fold(self):
-        with open("./5fold.pkl", 'rb') as f:
+        with open(config.CROSS_VALIDATION_PATH, 'rb') as f:
             data = pickle.load(f)
-        imgs = data["fold0"]['val']
+        imgs = data["fold{}".format(config.FOLD)][self.mode]
         patient_ids = [x.split("/")[-1] for x in imgs]
         ret = []
         for idx, file_name in enumerate(imgs):
@@ -50,6 +51,10 @@ class BRATS_SEG(object):
                 else:
                     _m = m.split("/")[-1].split(".")[0].split("_")[-1]
                     data['image_data'][_m] = m
+            if 'gt' in data:
+                data['preprocessed'] = crop_brain_region(data['image_data'], data['gt'])
+                del data['image_data']
+                del data['gt']
             ret.append(data)
         return ret
 
@@ -86,11 +91,19 @@ class BRATS_SEG(object):
                 else:
                     _m = m.split("/")[-1].split(".")[0].split("_")[-1]
                     data['image_data'][_m] = m
+            if 'gt' in data:
+                data['preprocessed'] = crop_brain_region(data['image_data'], data['gt'])
+                del data['image_data']
+                del data['gt']
+            else:
+                data['preprocessed'] = crop_brain_region(data['image_data'], None, with_gt=False)
+                del data['image_data']
+
             ret.append(data)
         return ret
 
     @staticmethod
-    def load_eval_from_file(basedir, names):
+    def load_from_file(basedir, names):
         brats = BRATS_SEG(basedir, names)
         return  brats.load_5fold()
 
@@ -105,7 +118,6 @@ class BRATS_SEG(object):
         for n in names:
             brats = BRATS_SEG(basedir, n)
             ret.extend(brats.load_3d())
-            #ret.extend(brats.load_5fold())
         return ret
 
 if __name__ == '__main__':

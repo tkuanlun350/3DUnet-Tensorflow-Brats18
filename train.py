@@ -42,7 +42,7 @@ class Unet3dModel(ModelDesc):
         print(self.modelType)
 
     def optimizer(self):
-        lr = tf.get_variable('learning_rate', initializer=0.003, trainable=False)
+        lr = tf.get_variable('learning_rate', initializer=config.BASE_LR, trainable=False)
         tf.summary.scalar('learning_rate', lr)
         opt = tf.train.MomentumOptimizer(lr, 0.9)
         return opt
@@ -76,7 +76,7 @@ class Unet3dModel(ModelDesc):
             loss = Loss(featuremap, weight, label)
             wd_cost = regularize_cost(
                     '(?:unet3d)/.*kernel',
-                    l2_regularizer(1e-4), name='wd_cost')
+                    l2_regularizer(1e-5), name='wd_cost')
 
             total_cost = tf.add_n([loss, wd_cost], 'total_cost')
 
@@ -123,8 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('--datadir', help='override config.BASEDIR')
     parser.add_argument('--visualize', action='store_true', help='visualize intermediate results')
     parser.add_argument('--evaluate', action='store_true', help="Run evaluation")
-    parser.add_argument('--predict', action='store_true', help="Run prediction on a given image. "
-                                          "This argument is the path to the input image file", default=False)
+    parser.add_argument('--predict', action='store_true', help="Run prediction")
     args = parser.parse_args()
     
     if args.datadir:
@@ -184,7 +183,7 @@ if __name__ == '__main__':
                 GPUUtilizationTracker(),
                 PeakMemoryTracker(),
                 EstimatedTimeLeft(),
-                SessionRunTimeout(60000),   # 1 minute timeout
+                SessionRunTimeout(600000),   # 1 minute timeout
             ],
             steps_per_epoch=stepnum,
             max_epoch=80,

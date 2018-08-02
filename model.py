@@ -11,47 +11,88 @@ from tensorpack.tfutils.scope_utils import under_name_scope
 from tensorpack.models import (
     BatchNorm, layer_register
 )
-from custom_ops import BatchNorm3d
+from custom_ops import BatchNorm3d, InstanceNorm5d
 import numpy as np
 import config
 import tensorflow.contrib.slim as slim
 PADDING = "SAME"
 DATA_FORMAT="channels_first"
+BASE_FILTER = 16
 
 @layer_register(log_shape=True)
 def unet3d(inputs):
-    print("inputs", inputs.shape)
-    depth = 3
+    depth = config.DEPTH
+    filters = []
     down_list = []
-    layer = inputs
+    deep_supervision = None
+    layer = tf.layers.conv3d(inputs=inputs, 
+                   filters=BASE_FILTER,
+                   kernel_size=(3,3,3),
+                   strides=1,
+                   padding=PADDING,
+                   activation=lambda x, name=None: BN_Relu(x),
+                   data_format=DATA_FORMAT,
+                   name="init_conv")
     
     for d in range(depth):
-        layer = Unet3dBlock('down{}'.format(d), layer, kernels=(3,3,3), n_feat=32, s=1)
+        if config.FILTER_GROW:
+            num_filters = BASE_FILTER * (2**d)
+        else:
+            num_filters = BASE_FILTER
+        filters.append(num_filters)
+        layer = Unet3dBlock('down{}'.format(d), layer, kernels=(3,3,3), n_feat=num_filters, s=1)
         down_list.append(layer)
         if d != depth - 1:
-            layer = tf.layers.max_pooling3d(inputs=layer, 
-                                            pool_size=(2,2,2), 
-                                            strides=2, 
-                                            padding=PADDING, 
-                                            data_format=DATA_FORMAT,
-                                            name="pool_{}".format(d))
-        print("layer", layer.shape)
-    for d in range(depth-1):
-        layer = tf.layers.conv3d_transpose(inputs=layer, 
-                                    filters=32,
-                                    kernel_size=(2,2,2),
-                                    strides=2,
+            layer = tf.layers.conv3d(inputs=layer, 
+                                    filters=num_filters*2,
+                                    kernel_size=(3,3,3),
+                                    strides=(2,2,2),
                                     padding=PADDING,
-                                    activation=tf.nn.relu,
+                                    activation=lambda x, name=None: BN_Relu(x),
                                     data_format=DATA_FORMAT,
-                                    name="up_conv_{}".format(d))
+                                    name="stride2conv{}".format(d))
+        print("1 layer", layer.shape)
+
+    for d in range(depth-2, -1, -1):
+        layer = UnetUpsample(d, layer, filters[d])
+
         if DATA_FORMAT == 'channels_first':
-            layer = tf.concat([layer, down_list[depth-1-1-d]], axis=1)
+            layer = tf.concat([layer, down_list[d]], axis=1)
         else:
-            layer = tf.concat([layer, down_list[depth-1-1-d]], axis=-1)
-        print("concat", layer.shape)
-        layer = Unet3dBlock('up{}'.format(d), layer, kernels=(3,3,3), n_feat=32, s=1)
-        print("layer", layer.shape)
+            layer = tf.concat([layer, down_list[d]], axis=-1)
+        #layer = Unet3dBlock('up{}'.format(d), layer, kernels=(3,3,3), n_feat=filters[d], s=1)
+        layer = tf.layers.conv3d(inputs=layer, 
+                                filters=filters[d],
+                                kernel_size=(3,3,3),
+                                strides=1,
+                                padding=PADDING,
+                                activation=lambda x, name=None: BN_Relu(x),
+                                data_format=DATA_FORMAT,
+                                name="lo_conv0_{}".format(d))
+        layer = tf.layers.conv3d(inputs=layer, 
+                                filters=filters[d],
+                                kernel_size=(1,1,1),
+                                strides=1,
+                                padding=PADDING,
+                                activation=lambda x, name=None: BN_Relu(x),
+                                data_format=DATA_FORMAT,
+                                name="lo_conv1_{}".format(d))
+        if config.DEEP_SUPERVISION:
+            if d < 3 and d > 0:
+                pred = tf.layers.conv3d(inputs=layer, 
+                                    filters=config.NUM_CLASS,
+                                    kernel_size=(1,1,1),
+                                    strides=1,
+                                    padding=PADDING,
+                                    activation=tf.identity,
+                                    data_format=DATA_FORMAT,
+                                    name="deep_super_{}".format(d))
+                if deep_supervision is None:
+                    deep_supervision = pred
+                else:
+                    deep_supervision = deep_supervision + pred
+                deep_supervision = Upsample3D(d, deep_supervision)
+                
     layer = tf.layers.conv3d(layer, 
                             filters=config.NUM_CLASS,
                             kernel_size=(1,1,1),
@@ -59,17 +100,69 @@ def unet3d(inputs):
                             activation=tf.identity,
                             data_format=DATA_FORMAT,
                             name="final")
+    if config.DEEP_SUPERVISION:
+        layer = layer + deep_supervision
     if DATA_FORMAT == 'channels_first':
         layer = tf.transpose(layer, [0, 2, 3, 4, 1]) # to-channel last
     print("final", layer.shape) # [3, num_class, d, h, w]
     return layer
 
+def Upsample3D(prefix, l, scale=2):
+    # _s = tf.shape(l)
+    # l = tf.keras.layers.UpSampling3D(size=(_s[2]*2, _s[3]*2, _s[4]*2), data_format=DATA_FORMAT)(l)
+    l = tf.layers.conv3d_transpose(inputs=l, 
+                                filters=num_filters,
+                                kernel_size=(2,2,2),
+                                strides=2,
+                                padding=PADDING,
+                                activation=tf.nn.relu,
+                                data_format=DATA_FORMAT,
+                                name="upsampe_{}".format(prefix))
+    """
+    l_out = tf.identity(l)
+    if DATA_FORMAT == 'channels_first':
+        l = tf.transpose(l, [0, 2, 3, 4, 1])
+    l_shape = l.get_shape().as_list()
+    l = tf.reshape(l, [l_shape[0]*l_shape[1], l_shape[2], l_shape[3], l_shape[4]])
+    l = tf.image.resize_images(l , (l_shape[2]*scale, l_shape[3]*scale))
+    l = tf.reshape(l, [l_shape[0], l_shape[1], l_shape[2]*scale, l_shape[3]*scale, l_shape[4]])
+    if DATA_FORMAT == 'channels_first':
+        l = tf.transpose(l, [0, 4, 1, 2, 3]) # Back to channel_first
+    """
+    return l
+
+def UnetUpsample(prefix, l, num_filters):
+    l = tf.layers.conv3d_transpose(inputs=l, 
+                                filters=num_filters,
+                                kernel_size=(2,2,2),
+                                strides=2,
+                                padding=PADDING,
+                                activation=tf.nn.relu,
+                                data_format=DATA_FORMAT,
+                                name="up_conv0_{}".format(prefix))
+    #l = Upsample3D(l)
+    l = tf.layers.conv3d(inputs=l, 
+                        filters=num_filters,
+                        kernel_size=(3,3,3),
+                        strides=1,
+                        padding=PADDING,
+                        activation=lambda x, name=None: BN_Relu(x),
+                        data_format=DATA_FORMAT,
+                        name="up_conv1_{}".format(prefix))
+    return l
+
 def BN_Relu(x):
-    l = BatchNorm3d('bn', x, axis=1 if DATA_FORMAT == 'channels_first' else -1)
+    if config.INSTANCE_NORM:
+        l = InstanceNorm5d('ins_norm', x, data_format=DATA_FORMAT)
+    else:
+        l = BatchNorm3d('bn', x, axis=1 if DATA_FORMAT == 'channels_first' else -1)
     l = tf.nn.relu(l)
     return l
 
 def Unet3dBlock(prefix, l, kernels, n_feat, s):
+    if config.RESIDUAL:
+        l_in = l
+
     for i in range(2):
         l = tf.layers.conv3d(inputs=l, 
                    filters=n_feat,
@@ -79,7 +172,9 @@ def Unet3dBlock(prefix, l, kernels, n_feat, s):
                    activation=lambda x, name=None: BN_Relu(x),
                    data_format=DATA_FORMAT,
                    name="{}_conv_{}".format(prefix, i))
-    return l
+
+    return l_in + l if config.RESIDUAL else l
+
 ### from niftynet ####
 def labels_to_one_hot(ground_truth, num_classes=1):
     """
@@ -245,9 +340,9 @@ def Loss(feature, weight, gt):
 
     
 if __name__ == "__main__":
-    image = tf.transpose(tf.constant(np.zeros((config.BATCH_SIZE,20,144,144,4)).astype(np.float32)), [0,4,1,2,3])
-    gt = tf.constant(np.zeros((config.BATCH_SIZE,20,144,144,1)).astype(np.float32))
-    weight = tf.constant(np.ones((config.BATCH_SIZE,20,144,144,1)).astype(np.float32))
+    image = tf.transpose(tf.constant(np.zeros((config.BATCH_SIZE,128,128,128,4)).astype(np.float32)), [0,4,1,2,3])
+    gt = tf.constant(np.zeros((config.BATCH_SIZE,128,128,128,1)).astype(np.float32))
+    weight = tf.constant(np.ones((config.BATCH_SIZE,128,128,128,1)).astype(np.float32))
     t = unet3d('unet3d', image)
     loss = Loss(t, weight, gt)
     print(t.shape, loss)
