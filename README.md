@@ -30,7 +30,7 @@ Eval:
 ```
 python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --eval
 ```
-** If you want to use 5 fold cross validation:
+** If you want to use 5 fold cross validation : **
 1. Run generate_5fold.py to save 5fold.pkl
 2. Set config CROSS_VALIDATION to True
 3. Set config CROSS_VALIDATION_PATH to {/path/to/5fold.pkl}
@@ -47,18 +47,6 @@ Unet3d, num_filters=32 (all), depth=3
 Unet3d, num_filters=32 (all), depth=3
 + PatchSize = [2, 128, 128, 128] pre gpu, num_gpus = 2, epochs = 40
 + Lr = 0.01, epoch time = 20:35(min), total_training_time ~ 10 hours
-### Setting 3:
-Unet3d, num_filters=16~256, **depth=5, **residual
-+ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 40
-+ Lr = 0.0005, epoch time = 6:35(min), total_training_time ~ 6 hours
-### Setting 4:
-Unet3d, num_filters=16~256, **depth=5, **residual, **deep-supervision, **InstanceNorm
-+ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 40
-+ Lr = 0.0005, epoch time = 6:35(min), total_training_time ~ 6 hours
-### Setting 5:
-Unet3d, num_filters=16~256, **depth=5, **residual, **deep-supervision, **InstanceNorm
-+ PatchSize = [2, 128, 128, 128], num_gpus = 2, epochs = 40
-+ Lr = 0.0005, epoch time = 6:35(min), total_training_time ~ 6 hours
 
 | Setting | Dice_ET | Dice_WT | Dice_ET |
 | --- | --- | --- | --- |
