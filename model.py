@@ -108,17 +108,17 @@ def unet3d(inputs):
     return layer
 
 def Upsample3D(prefix, l, scale=2):
-    # _s = tf.shape(l)
-    # l = tf.keras.layers.UpSampling3D(size=(_s[2]*2, _s[3]*2, _s[4]*2), data_format=DATA_FORMAT)(l)
+    l = tf.keras.layers.UpSampling3D(size=(2,2,2), data_format=DATA_FORMAT)(l)
+    """
     l = tf.layers.conv3d_transpose(inputs=l, 
-                                filters=num_filters,
+                                filters=config.NUM_CLASS,
                                 kernel_size=(2,2,2),
                                 strides=2,
                                 padding=PADDING,
                                 activation=tf.nn.relu,
                                 data_format=DATA_FORMAT,
                                 name="upsampe_{}".format(prefix))
-    """
+    
     l_out = tf.identity(l)
     if DATA_FORMAT == 'channels_first':
         l = tf.transpose(l, [0, 2, 3, 4, 1])
@@ -132,6 +132,7 @@ def Upsample3D(prefix, l, scale=2):
     return l
 
 def UnetUpsample(prefix, l, num_filters):
+    """
     l = tf.layers.conv3d_transpose(inputs=l, 
                                 filters=num_filters,
                                 kernel_size=(2,2,2),
@@ -140,7 +141,8 @@ def UnetUpsample(prefix, l, num_filters):
                                 activation=tf.nn.relu,
                                 data_format=DATA_FORMAT,
                                 name="up_conv0_{}".format(prefix))
-    #l = Upsample3D(l)
+    """
+    l = Upsample3D('', l)
     l = tf.layers.conv3d(inputs=l, 
                         filters=num_filters,
                         kernel_size=(3,3,3),
@@ -333,7 +335,7 @@ def Loss(feature, weight, gt):
         if w.shape.as_list()[-1] == 1:
             w = tf.squeeze(w, axis=-1) # (nvoxel, )
         f = tf.nn.softmax(f)
-        loss_per_batch = generalised_dice_loss(f, g, weight_map=w)
+        loss_per_batch = dice(f, g, weight_map=w)
         #loss_per_batch = cross_entropy(f, g, weight_map=w)
         losses.append(loss_per_batch)
     return tf.reduce_mean(losses, name="dice_loss")
