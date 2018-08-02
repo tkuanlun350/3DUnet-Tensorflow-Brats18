@@ -6,9 +6,9 @@ Borrow a lot of codes from https://github.com/taigw/brats17/. I improved the pip
 I want to verify the effectiveness (consistent improvement despite of slight implementation differences and different deep-learning framework) of some architecture proposed these years. Such as
 dice_loss, generalised dice_loss, residual connection, instance norm, deep supervision ...etc. Those design are popular and used in many papers in BRATS competition.  
 
-[BRATS2017 1rd Solution, Ensembles of Multiple Models and Architectures for Robust Brain Tumour Segmentation](https://arxiv.org/pdf/1711.01468.pdf)
-[BRATS2017 2rd Solution](https://github.com/taigw/brats17/)
-[BRATS2017 3rd Solution](https://github.com/ellisdg/3DUnetCNN)
++ [BRATS2017 1rd Solution, Ensembles of Multiple Models and Architectures for Robust Brain Tumour Segmentation](https://arxiv.org/pdf/1711.01468.pdf)
++ [BRATS2017 2rd Solution, Automatic Brain Tumor Segmentation using Cascaded Anisotropic Convolutional Neural Networks](https://github.com/taigw/brats17/)
++ [BRATS2017 3rd Solution](https://github.com/ellisdg/3DUnetCNN)
 
 ## Dependencies
 + Python 3; TensorFlow >= 1.4
@@ -35,8 +35,14 @@ python3 train.py --logdir=./train_log/unet3d --gpu 0
 ```
 Eval:
 ```
-python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --eval
+python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --evaluation
 ```
+
+Predict:
+```
+python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --predict
+```
+
 **If you want to use 5 fold cross validation :**
 1. Run generate_5fold.py to save 5fold.pkl
 2. Set config CROSS_VALIDATION to True
@@ -65,7 +71,7 @@ Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **I
 ### Setting 5:
 Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **InstanceNorm**
 + PatchSize = [2, 128, 128, 128], num_gpus = 2, epochs = 40
-+ Lr = 0.0005, epoch time = 6:35(min), total_training_time ~ 6 hours
++ Lr = 0.001, epoch time = 6:35(min), total_training_time ~ 6 hours
 
 | Setting | Dice_ET | Dice_WT | Dice_ET |
 | --- | --- | --- | --- |
@@ -75,4 +81,4 @@ Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **I
 
 p.s. * means advanced post-processing
 ## Notes
-Results for brats2018 will be updated and more experiments will be included. [2018/7/31]
+Results for brats2018 will be updated and more experiments will be included. [2018/8/3]
