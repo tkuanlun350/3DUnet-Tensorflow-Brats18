@@ -32,11 +32,11 @@ def get_model_output_names():
     return ret
 
 
-def get_model(modelType="training", inference_shape=config.PATCH_SIZE):
+def get_model(modelType="training", inference_shape=config.INFERENCE_PATCH_SIZE):
     return Unet3dModel(modelType=modelType, inference_shape=inference_shape)
 
 class Unet3dModel(ModelDesc):
-    def __init__(self, modelType="training", inference_shape=config.PATCH_SIZE):
+    def __init__(self, modelType="training", inference_shape=config.INFERENCE_PATCH_SIZE):
         self.modelType = modelType
         self.inference_shape = inference_shape
         print(self.modelType)
@@ -105,15 +105,15 @@ def offline_evaluate(pred_func, output_file):
         df = get_eval_dataflow()
         if config.DYNAMIC_SHAPE_PRED:    
             eval_brats(
-                df, lambda img: segment_one_image_dynamic(img, [pred_func]))
+                df, lambda img: segment_one_image_dynamic(img, pred_func))
         else:
             eval_brats(
-                df, lambda img: segment_one_image(img, [pred_func]))
+                df, lambda img: segment_one_image(img, pred_func))
 
 def offline_pred(pred_func, output_file):
         df = get_test_dataflow()
         pred_brats(
-            df, lambda img: segment_one_image(img, [pred_func]))
+            df, lambda img: segment_one_image(img, pred_func))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -140,7 +140,25 @@ if __name__ == '__main__':
                     session_init=get_model_loader(args.load),
                     input_names=['image'],
                     output_names=get_model_output_names()))
-            offline_evaluate(get_dynamic_pred, args.evaluate)
+            offline_evaluate([get_dynamic_pred], args.evaluate)
+        elif config.MULTI_VIEW:
+            pred = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            pred1 = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8_sa/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            pred2 = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8_cr/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
+            offline_evaluate([pred, pred1, pred2], args.evaluate)
         else:
             pred = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
@@ -150,18 +168,38 @@ if __name__ == '__main__':
             # autotune is too slow for inference
             os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
             assert args.load
-            offline_evaluate(pred, args.evaluate)
+            offline_evaluate([pred], args.evaluate)
     
     elif args.predict:
-        pred = OfflinePredictor(PredictConfig(
-                model=get_model(modelType="inference"),
-                session_init=get_model_loader(args.load),
-                input_names=['image'],
-                output_names=get_model_output_names()))
-        # autotune is too slow for inference
-        os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
-        assert args.load
-        offline_pred(pred, args.evaluate)
+        if config.MULTI_VIEW:
+            pred = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            pred1 = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8_sa/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            pred2 = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader("./train_log/unet_8_cr/model-10000"),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            # autotune is too slow for inference
+            os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
+            offline_pred([pred, pred1, pred2], args.evaluate)
+        else:
+            pred = OfflinePredictor(PredictConfig(
+                    model=get_model(modelType="inference"),
+                    session_init=get_model_loader(args.load),
+                    input_names=['image'],
+                    output_names=get_model_output_names()))
+            # autotune is too slow for inference
+            os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
+            assert args.load
+            offline_pred([pred], args.evaluate)
         
     else:
         logger.set_logger_dir(args.logdir)
@@ -183,7 +221,6 @@ if __name__ == '__main__':
                 GPUUtilizationTracker(),
                 PeakMemoryTracker(),
                 EstimatedTimeLeft(),
-                SessionRunTimeout(600000),   # 1 minute timeout
             ],
             steps_per_epoch=stepnum,
             max_epoch=80,

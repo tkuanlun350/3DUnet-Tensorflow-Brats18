@@ -91,10 +91,12 @@ class BRATS_SEG(object):
                 else:
                     _m = m.split("/")[-1].split(".")[0].split("_")[-1]
                     data['image_data'][_m] = m
+            
             if 'gt' in data:
-                data['preprocessed'] = crop_brain_region(data['image_data'], data['gt'])
-                del data['image_data']
-                del data['gt']
+                if not config.NO_CACHE:
+                    data['preprocessed'] = crop_brain_region(data['image_data'], data['gt'])
+                    del data['image_data']
+                    del data['gt']
             else:
                 data['preprocessed'] = crop_brain_region(data['image_data'], None, with_gt=False)
                 del data['image_data']

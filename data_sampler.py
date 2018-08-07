@@ -68,11 +68,17 @@ class BatchData(ProxyDataFlow):
         """
         holder = []
         for data in self.ds.get_data():
-            if len(holder) == self.batch_size - 1:
-                # force to contain label
-                t = [x[2].sum() for x in holder]
-                if sum(t) == 0 and data[2].sum() == 0:
+            if config.DATA_SAMPLING == 'all_positive':
+                if data[2].sum() == 0:
                     continue
+            elif config.DATA_SAMPLING == 'one_positive':
+                if len(holder) == self.batch_size - 1:
+                    # force to contain label
+                    t = [x[2].sum() for x in holder]
+                    if sum(t) == 0 and data[2].sum() == 0:
+                        continue
+            else:
+                pass
             holder.append(data)
             if len(holder) == self.batch_size:
                 yield BatchData._aggregate_batch(holder, self.use_list)
@@ -217,17 +223,18 @@ def get_train_dataflow(add_mask=True):
         imgs = BRATS_SEG.load_many(
             config.BASEDIR, config.TRAIN_DATASET, add_gt=False, add_mask=add_mask)
     # no filter for training
-    imgs = list(filter(lambda img: len(img['preprocessed']) > 0, imgs))    # log invalid training
+    imgs = list(imgs) 
 
     ds = DataFromList(imgs, shuffle=True)
     
     def preprocess(data):
-        #fname, gt, im = data['file_name'], data['gt'], data['image_data']
-        #assert im is not None, fname
-        #batch = sampler3d(im, gt)
-        #assert batch['labels'].sum() > 0
-        volume_list, label, weight, _, _ = data['preprocessed']
-        batch = sampler3d(volume_list, label, weight)
+        if config.NO_CACHE:
+            fname, gt, im = data['file_name'], data['gt'], data['image_data']
+            volume_list, label, weight, _, _ = crop_brain_region(im, gt)
+            batch = sampler3d(volume_list, label, weight)
+        else:
+            volume_list, label, weight, _, _ = data['preprocessed']
+            batch = sampler3d(volume_list, label, weight)
         return [batch['images'], batch['weights'], batch['labels']]
         
     ds = BatchData(MapData(ds, preprocess), config.BATCH_SIZE)

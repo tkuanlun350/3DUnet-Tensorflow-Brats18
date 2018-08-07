@@ -12,7 +12,8 @@ dice_loss, generalised dice_loss, residual connection, instance norm, deep super
 
 ## Dependencies
 + Python 3; TensorFlow >= 1.4
-+ Tensorpack^0.8.0 (https://github.com/tensorpack/tensorpack)
++ Tensorpack@0.8.2 (https://github.com/tensorpack/tensorpack)
+(pip install -U git+https://github.com/ppwwyyxx/tensorpack.git@0.8.5)
 + BRATS2017 or BRATS2018 data. It needs to have the following directory structure:
 ```
 DIR/
@@ -35,7 +36,7 @@ python3 train.py --logdir=./train_log/unet3d --gpu 0
 ```
 Eval:
 ```
-python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --evaluation
+python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --evaluate
 ```
 
 Predict:
@@ -53,31 +54,64 @@ python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --predict
 The detailed parameters and training settings.
 The results are derived from Brats2018 online evaluation on Validation Set.
 ### Setting 1:
-Unet3d, num_filters=32 (all), depth=3
+Unet3d, num_filters=32 (all), depth=3, sampling=one_positive
 + PatchSize = [5, 20, 144, 144] per gpu, num_gpus = 2, epochs = 40
 + Lr = 0.01, num_step=500, epoch time = 6:35(min), total_training_time ~ 5 hours
 ### Setting 2:
-Unet3d, num_filters=32 (all), depth=3
+Unet3d, num_filters=32 (all), depth=3, sampling=one_positive
 + PatchSize = [2, 128, 128, 128] pre gpu, num_gpus = 2, epochs = 40
 + Lr = 0.01, num_step=500, epoch time = 20:35(min), total_training_time ~ 10 hours
-### Setting 3:
-Unet3d, num_filters=16~256, **depth=5**, **residual**
-+ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 40
-+ Lr = 0.001, num_step=500, epoch time = 21(min), total_training_time ~ 6 hours
+### Setting 3
+Unet3d, num_filters=16~256, sampling=one_positive, **depth=5**, **residual**
++ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
 ### Setting 4:
-Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **InstanceNorm**
-+ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 40
-+ Lr = 0.001, num_step=500, epoch time = 6:35(min), total_training_time ~ 6 hours
+Unet3d, num_filters=16~256, **depth=5**, **residual** **InstanceNorm**, **sampling=random**
++ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
 ### Setting 5:
-Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **InstanceNorm**
-+ PatchSize = [2, 128, 128, 128], num_gpus = 2, epochs = 40
-+ Lr = 0.001, epoch time = 6:35(min), total_training_time ~ 6 hours
+Unet3d, num_filters=16~256, **depth=5**, **residual**, **InstanceNorm**, **sampling=one_positive**
++ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
+### Setting 6:
+Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**,     **InstanceNorm**, **sampling=one_positive**
++ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
++ Lr = 0.001, epoch time = 19(min), total_training_time ~ 8 hours
+### Setting 7:
+Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **BatchNorm**, **sampling=one_positive**
++ PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
++ Lr = 0.001, epoch time = 20(min), total_training_time ~ 8 hours
+### Setting 8:
+Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **InstanceNorm**, **sampling=random**
++ PatchSize = [2, 128, 128, 128], **num_gpus = 2**, epochs = 20
++ Lr = 0.001, epoch time = 22(min), total_training_time ~ 8 hours
 
-| Setting | Dice_ET | Dice_WT | Dice_ET |
+| Setting | Dice_ET | Dice_WT | Dice_TC |
 | --- | --- | --- | --- |
 | 1 | 0.74 | 0.85 | 0.75 |
 | 2 | 0.74 | 0.83 | 0.77 |
 | 2* | 0.777 | 0.84 | 0.77 |
+| 3 | 0.74 | 0.87 | 0.78 |
+| 4 | 0.75 | 0.87 | 0.790 |
+| 5 | 0.72 | 0.87 | 0.796 |
+| 6 | 0.73 | 0.88 | 0.80 |
+| 6* | 0.75 | 0.88 | 0.80 |
+| 7 | 0.73 | 0.87 | 0.78 |
+| 8* | 0.774 | 0.87 | 0.81 |
+
+## Ensemble Results
+### Multi-View:
+Introduced by [Automatic Brain Tumor Segmentation using Cascaded Anisotropic Convolutional Neural Networks](https://github.com/taigw/brats17/). Trained with axial, sagittal and coronal and then average the prediction prob.
+
+### Test-Time augmentation:
+Testing with image augmentation to improve model robustness.
+Flip: Predicting on original image and horizontal flipped image and average the prediction prob.
+
+| Setting | Dice_ET | Dice_WT | Dice_TC |
+| --- | --- | --- | --- |
+| Multi-View |  |  |  |
+| Flip | |||
+
 
 p.s. * means advanced post-processing
 ## Notes

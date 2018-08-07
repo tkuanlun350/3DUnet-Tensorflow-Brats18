@@ -185,26 +185,30 @@ def segment_one_image(data, model_func):
     img = img[np.newaxis, ...] # add batch dim
 
     im = img
-    im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
-    im_ax = transpose_volumes(im_ax, 'axial')
-    prob1_ax = batch_segmentation(im_ax, model_func[0], data_shape=config.PATCH_SIZE)
-    # need to take care if image size > data_shape
 
     if config.MULTI_VIEW:
+        im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
+        im_ax = transpose_volumes(im_ax, 'axial')
+        prob1_ax = batch_segmentation(im_ax, model_func[0], data_shape=config.INFERENCE_PATCH_SIZE)
+
         im_sa = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_sa = transpose_volumes(im_sa, 'sagittal')
-        prob1_sa = batch_segmentation(im_sa, model_func[1], data_shape=[20,240,240])
+        prob1_sa = batch_segmentation(im_sa, model_func[1], data_shape=config.INFERENCE_PATCH_SIZE)
 
         im_co = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_co = transpose_volumes(im_co, 'coronal')
-        prob1_co = batch_segmentation(im_co, model_func[2], data_shape=[20,240,240])
+        prob1_co = batch_segmentation(im_co, model_func[2], data_shape=config.INFERENCE_PATCH_SIZE)
 
-        pred1 = (prob1_ax + np.transpose(prob1_sa, (1,2,0,3)) + np.transpose(prob1_co, (1,0,2,3)))/ 3.0
+        pred1 = (prob1_ax + np.transpose(prob1_sa, (1, 2, 0, 3)) + np.transpose(prob1_co, (1, 0, 2, 3))) / 3.0
         pred1 = np.argmax(pred1, axis=-1)
     else:
-        pred1 = np.argmax(prob1_ax, axis=-1)
+        im_pred = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
+        im_pred = transpose_volumes(im_pred, config.DIRECTION)
+        prob1 = batch_segmentation(im_pred, model_func[0], data_shape=config.INFERENCE_PATCH_SIZE)
+        pred1 = np.argmax(prob1, axis=-1)
     
     pred1 = pred1 * temp_weight # clear non-brain region
+    pred1[pred1 == 3] = 4
     # pred1 should be the same as cropped brain region
     if config.ADVANCE_POSTPROCESSING:
         pred_whole = np.zeros_like(pred1)
@@ -227,14 +231,14 @@ def segment_one_image(data, model_func):
         subsub_weight = np.zeros_like(temp_weight)
         subsub_weight[pred_core > 0] = 1
         pred_enhancing = pred_enhancing * subsub_weight
+        all_vox = np.asarray(pred_whole > 0, np.float32).sum()
         vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
-        if(0 < vox_3 and vox_3 < 100):
+        if(all_vox > 100 and 0 < vox_3 and vox_3 < 100):
             pred_enhancing = np.zeros_like(pred_enhancing)
         out_label = pred_whole * 2
         out_label[pred_core>0] = 1
         out_label[pred_enhancing>0] = 4
     else:
-        pred1[pred1 == 3] = 4
         out_label = pred1
     out_label = np.asarray(out_label, np.int16)
     final_label = np.zeros(temp_size, np.int16)
