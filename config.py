@@ -18,7 +18,7 @@ FILTER_GROW = True
 INSTANCE_NORM = True
 # Use multi-view fusion 3 models for 3 view must be trained
 DIRECTION = 'axial' # axial, sagittal, coronal
-MULTI_VIEW = False
+MULTI_VIEW = True
 
 # training config
 BASE_LR = 0.001
@@ -38,6 +38,8 @@ NO_CACHE = True
 # if NO_CACHE = False, we load pre-processed volume into memory to accelerate training.
 # set True when system memory loading is too high
 ###
+TEST_FLIP = False
+# Test time augmentation
 DYNAMIC_SHAPE_PRED = False
 # change PATCH_SIZE in inference if cropped brain region > PATCH_SIZE
 ADVANCE_POSTPROCESSING = True

@@ -10,6 +10,22 @@ import SimpleITK as sitk
 import pickle
 from scipy import ndimage
 import config
+import copy
+
+def flip_lr(data):
+    data = copy.deepcopy(data)
+    img = data['images']
+    img = np.transpose(img, [3, 0 ,1, 2])
+    weight = data['weights'][:,:,:,0]
+    flipped_data = []
+    for moda in range(len(img)):
+        flipped_data.append(np.flip(img[moda], axis=-1))
+    flipped_data = np.array(flipped_data)
+    weight = np.flip(weight, axis=-1)
+    data['images'] = np.transpose(flipped_data, [1, 2, 3, 0])
+    data['weights'] = np.transpose(weight[np.newaxis, ...], [1, 2, 3, 0])
+    data['is_flipped'] = True
+    return data
 
 def crop_brain_region(im, gt, with_gt=True):
     mods = sorted(im.keys())

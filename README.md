@@ -25,6 +25,11 @@ DIR/
   test/
     BRATS*.nii.gz
 ```
+## Data
+If you don't have Brats data, you can visit [ellisdg/3DUnetCNN](https://github.com/ellisdg/3DUnetCNN) where he provided sample data from TCGA.
+
+You can modify data_loader.py to apply for different 3D datasets. The data sampling
+strategy is defined in data_sampler.py BatchData class.
 
 ## Usage
 Change config in `config.py`:
@@ -90,14 +95,14 @@ Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **I
 | --- | --- | --- | --- |
 | 1 | 0.74 | 0.85 | 0.75 |
 | 2 | 0.74 | 0.83 | 0.77 |
-| 2* | 0.777 | 0.84 | 0.77 |
+| 2* | 0.77 | 0.84 | 0.77 |
 | 3 | 0.74 | 0.87 | 0.78 |
 | 4 | 0.75 | 0.87 | 0.790 |
 | 5 | 0.72 | 0.87 | 0.796 |
 | 6 | 0.73 | 0.88 | 0.80 |
 | 6* | 0.75 | 0.88 | 0.80 |
 | 7 | 0.73 | 0.87 | 0.78 |
-| 8* | 0.774 | 0.87 | 0.81 |
+| 8* | 0.77 | 0.87 | 0.81 |
 
 ## Ensemble Results
 ### Multi-View:
@@ -109,9 +114,9 @@ Flip: Predicting on original image and horizontal flipped image and average the 
 
 | Setting | Dice_ET | Dice_WT | Dice_TC |
 | --- | --- | --- | --- |
+| 8+Flip | 0.73 | 0.88 | 0.81 |
+| 8*+Flip | 0.77 | 0.88 | 0.82 |
 | Multi-View |  |  |  |
-| Flip | |||
-
 
 p.s. * means advanced post-processing
 ## Notes

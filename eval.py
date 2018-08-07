@@ -11,6 +11,43 @@ from tensorpack.utils.utils import get_tqdm_kwargs
 import config
 from utils import *
 
+def post_processing(pred1, temp_weight):
+    struct = ndimage.generate_binary_structure(3, 2)
+    margin = 5
+    wt_threshold = 2000
+    pred1 = pred1 * temp_weight # clear non-brain region
+    # pred1 should be the same as cropped brain region
+    # now fill the croped region with our prediction
+    pred_whole = np.zeros_like(pred1)
+    pred_core = np.zeros_like(pred1)
+    pred_enhancing = np.zeros_like(pred1)
+    pred_whole[pred1 > 0] = 1
+    pred1[pred1 == 2] = 0
+    pred_core[pred1 > 0] = 1
+    pred_enhancing[pred1 == 4]  = 1
+    
+    pred_whole = ndimage.morphology.binary_closing(pred_whole, structure = struct)
+    pred_whole = get_largest_two_component(pred_whole, False, wt_threshold)
+    
+    sub_weight = np.zeros_like(temp_weight)
+    sub_weight[pred_whole > 0] = 1
+    pred_core = pred_core * sub_weight
+    pred_core = ndimage.morphology.binary_closing(pred_core, structure = struct)
+    pred_core = get_largest_two_component(pred_core, False, wt_threshold)
+
+    subsub_weight = np.zeros_like(temp_weight)
+    subsub_weight[pred_core > 0] = 1
+    pred_enhancing = pred_enhancing * subsub_weight
+    vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
+    all_vox = np.asarray(pred_whole > 0, np.float32).sum()
+    if(all_vox > 100 and 0 < vox_3 and vox_3 < 100):
+        pred_enhancing = np.zeros_like(pred_enhancing)
+    out_label = pred_whole * 2
+    out_label[pred_core>0] = 1
+    out_label[pred_enhancing>0] = 4
+
+    return out_label
+
 def batch_segmentation(temp_imgs, model_func, data_shape=[19, 180, 160]):
     batch_size = config.BATCH_SIZE
     data_channel = 4
@@ -77,9 +114,6 @@ def segment_one_image_dynamic(data, create_model_func):
     temp_weight = data['weights'][:,:,:,0]
     temp_size = data['original_shape']
     temp_bbox = data['bbox']
-    struct = ndimage.generate_binary_structure(3, 2)
-    margin = 5
-    wt_threshold = 2000
     
     img = img[np.newaxis, ...] # add batch dim
 
@@ -123,37 +157,9 @@ def segment_one_image_dynamic(data, create_model_func):
         pred1 = np.argmax(pred1, axis=-1)
     else:
         pred1 = np.argmax(prob1_ax, axis=-1)
-    
-    pred1 = pred1 * temp_weight # clear non-brain region
-    # pred1 should be the same as cropped brain region
-    # now fill the croped region with our prediction
-    pred_whole = np.zeros_like(pred1)
-    pred_core = np.zeros_like(pred1)
-    pred_enhancing = np.zeros_like(pred1)
-    pred_whole[pred1 > 0] = 1
-    pred1[pred1 == 2] = 0
-    pred_core[pred1 > 0] = 1
-    pred_enhancing[pred1 == 4]  = 1
-    
-    pred_whole = ndimage.morphology.binary_closing(pred_whole, structure = struct)
-    pred_whole = get_largest_two_component(pred_whole, False, wt_threshold)
-    #bbox1 = get_ND_bounding_box(pred1_lc, margin)
-    #sub_imgs = [crop_ND_volume_with_bounding_box(one_img, bbox1[0], bbox1[1]) for one_img in temp_imgs]
-    sub_weight = np.zeros_like(temp_weight)
-    sub_weight[pred_whole > 0] = 1
-    pred_core = pred_core * sub_weight
-    pred_core = ndimage.morphology.binary_closing(pred_core, structure = struct)
-    pred_core = get_largest_two_component(pred_core, False, wt_threshold)
-
-    subsub_weight = np.zeros_like(temp_weight)
-    subsub_weight[pred_core > 0] = 1
-    pred_enhancing = pred_enhancing * subsub_weight
-    vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
-    if(0 < vox_3 and vox_3 < 30):
-        pred_enhancing = np.zeros_like(pred_enhancing)
-    out_label = pred_whole * 2
-    out_label[pred_core>0] = 1
-    out_label[pred_enhancing>0] = 4
+        
+    pred1[pred1 == 3] = 4
+    out_label = post_processing(pred1, temp_weight)
     out_label = np.asarray(out_label, np.int16)
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
@@ -178,9 +184,7 @@ def segment_one_image(data, model_func):
     temp_weight = data['weights'][:,:,:,0]
     temp_size = data['original_shape']
     temp_bbox = data['bbox']
-    struct = ndimage.generate_binary_structure(3, 2)
-    margin = 5
-    wt_threshold = 2000
+
     
     img = img[np.newaxis, ...] # add batch dim
 
@@ -199,51 +203,37 @@ def segment_one_image(data, model_func):
         im_co = transpose_volumes(im_co, 'coronal')
         prob1_co = batch_segmentation(im_co, model_func[2], data_shape=config.INFERENCE_PATCH_SIZE)
 
-        pred1 = (prob1_ax + np.transpose(prob1_sa, (1, 2, 0, 3)) + np.transpose(prob1_co, (1, 0, 2, 3))) / 3.0
-        pred1 = np.argmax(pred1, axis=-1)
+        prob1 = (prob1_ax + np.transpose(prob1_sa, (1, 2, 0, 3)) + np.transpose(prob1_co, (1, 0, 2, 3))) / 3.0
+        pred1 = np.argmax(prob1, axis=-1)
     else:
         im_pred = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_pred = transpose_volumes(im_pred, config.DIRECTION)
         prob1 = batch_segmentation(im_pred, model_func[0], data_shape=config.INFERENCE_PATCH_SIZE)
+        if config.DIRECTION == 'sagittal':
+            prob1 = np.transpose(prob1, (1, 2, 0, 3))
+        elif config.DIRECTION == 'coronal':
+            prob1 = np.transpose(prob1, (1, 0, 2, 3))
+        else:
+            prob1 = prob1
         pred1 = np.argmax(prob1, axis=-1)
     
-    pred1 = pred1 * temp_weight # clear non-brain region
     pred1[pred1 == 3] = 4
     # pred1 should be the same as cropped brain region
     if config.ADVANCE_POSTPROCESSING:
-        pred_whole = np.zeros_like(pred1)
-        pred_core = np.zeros_like(pred1)
-        pred_enhancing = np.zeros_like(pred1)
-        pred_whole[pred1 > 0] = 1
-        pred1[pred1 == 2] = 0
-        pred_core[pred1 > 0] = 1
-        pred_enhancing[pred1 == 4] = 1
-
-        pred_whole = ndimage.morphology.binary_closing(pred_whole, structure = struct)
-        pred_whole = get_largest_two_component(pred_whole, False, wt_threshold)
-
-        sub_weight = np.zeros_like(temp_weight)
-        sub_weight[pred_whole > 0] = 1
-        pred_core = pred_core * sub_weight
-        pred_core = ndimage.morphology.binary_closing(pred_core, structure = struct)
-        pred_core = get_largest_two_component(pred_core, False, wt_threshold)
-
-        subsub_weight = np.zeros_like(temp_weight)
-        subsub_weight[pred_core > 0] = 1
-        pred_enhancing = pred_enhancing * subsub_weight
-        all_vox = np.asarray(pred_whole > 0, np.float32).sum()
-        vox_3  = np.asarray(pred_enhancing > 0, np.float32).sum()
-        if(all_vox > 100 and 0 < vox_3 and vox_3 < 100):
-            pred_enhancing = np.zeros_like(pred_enhancing)
-        out_label = pred_whole * 2
-        out_label[pred_core>0] = 1
-        out_label[pred_enhancing>0] = 4
+        out_label = post_processing(pred1, temp_weight)
     else:
         out_label = pred1
     out_label = np.asarray(out_label, np.int16)
+
+    if 'is_flipped' in data and data['is_flipped']:
+        out_label = np.flip(out_label, axis=-1)
+        prob1 = np.flip(prob1, axis=2) # d, h, w, num_class
+    
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
-    final_probs = prob1_ax # no-use for now
+
+    final_probs = np.zeros(temp_size + [config.NUM_CLASS], np.float32)
+    final_probs = set_ND_volume_roi_with_bounding_box_range(final_probs, temp_bbox[0]+[0], temp_bbox[1]+[3], prob1)
         
     return final_label, final_probs
 
@@ -282,10 +272,23 @@ def eval_brats(df, detect_func, with_gt=True):
     results = []
     with tqdm.tqdm(total=df.size(), **get_tqdm_kwargs()) as pbar:
         for filename, image_id, data in df.get_data():
-            pred, probs = detect_func(data)
+            final_label, probs = detect_func(data)
+            if config.TEST_FLIP:
+                pred_flip, probs_flip = detect_func(flip_lr(data))
+                final_prob = (probs + probs_flip) / 2.0
+                pred = np.argmax(final_prob, axis=-1)
+                pred[pred == 3] = 4
+                if config.ADVANCE_POSTPROCESSING:
+                    pred = crop_ND_volume_with_bounding_box(pred, data['bbox'][0], data['bbox'][1])
+                    pred = post_processing(pred, data['weights'][:,:,:,0])
+                    pred = np.asarray(pred, np.int16)
+                    final_label = np.zeros(data['original_shape'], np.int16)
+                    final_label = set_ND_volume_roi_with_bounding_box_range(final_label, data['bbox'][0], data['bbox'][1], pred)
+                else:
+                    final_label = pred
             gt = load_nifty_volume_as_array("{}/{}_seg.nii.gz".format(filename, image_id))
             gts.append(gt)
-            results.append(pred)
+            results.append(final_label)
             pbar.update()
     test_types = ['whole', 'core', 'enhancing']
     ret = {}
@@ -314,8 +317,22 @@ def pred_brats(df, detect_func):
     results = []
     with tqdm.tqdm(total=df.size(), **get_tqdm_kwargs()) as pbar:
         for filename, image_id, data in df.get_data():
-            pred, probs = detect_func(data)
-            save_to_nii(pred, image_id, outdir="eval_out18", mode="label")
+            final_label, probs = detect_func(data)
+            if config.TEST_FLIP:
+                pred_flip, probs_flip = detect_func(flip_lr(data))
+                final_prob = (probs + probs_flip) / 2.0
+                pred = np.argmax(final_prob, axis=-1)
+                pred[pred == 3] = 4
+                if config.ADVANCE_POSTPROCESSING:
+                    pred = crop_ND_volume_with_bounding_box(pred, data['bbox'][0], data['bbox'][1])
+                    pred = post_processing(pred, data['weights'][:,:,:,0])
+                    pred = np.asarray(pred, np.int16)
+                    final_label = np.zeros(data['original_shape'], np.int16)
+                    final_label = set_ND_volume_roi_with_bounding_box_range(final_label, data['bbox'][0], data['bbox'][1], pred)
+                else:
+                    final_label = pred
+
+            save_to_nii(final_label, image_id, outdir="eval_out18", mode="label")
             # save prob to ensemble
             # save_to_pkl(probs, image_id, outdir="eval_out18_prob_{}".format(config.CROSS_VALIDATION))
             pbar.update()
