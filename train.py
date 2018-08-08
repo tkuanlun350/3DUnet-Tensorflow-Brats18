@@ -93,7 +93,7 @@ class EvalCallback(Callback):
         self.df = get_eval_dataflow()
     
     def _eval(self):
-        scores = eval_brats(self.df, lambda img: segment_one_image(img, [self.pred]))
+        scores = eval_brats(self.df, lambda img: segment_one_image(img, [self.pred], is_online=True))
         for k, v in scores.items():
             self.trainer.monitors.put_scalar(k, v)
 
@@ -144,17 +144,17 @@ if __name__ == '__main__':
         elif config.MULTI_VIEW:
             pred = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             pred1 = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8_sa/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8_sa/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             pred2 = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8_cr/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8_cr/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             os.environ['TF_CUDNN_USE_AUTOTUNE'] = '0'
@@ -174,17 +174,17 @@ if __name__ == '__main__':
         if config.MULTI_VIEW:
             pred = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             pred1 = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8_sa/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8_sa/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             pred2 = OfflinePredictor(PredictConfig(
                     model=get_model(modelType="inference"),
-                    session_init=get_model_loader("./train_log/unet_8_cr/model-10000"),
+                    session_init=get_model_loader("./train_log/unet3d_8_cr/model-10000"),
                     input_names=['image'],
                     output_names=get_model_output_names()))
             # autotune is too slow for inference

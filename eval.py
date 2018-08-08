@@ -102,7 +102,7 @@ def segment_one_image_dynamic(data, create_model_func):
     """
     def get_dynamic_shape(image_shape):
         [D, H, W] = image_shape
-        data_shape = config.PATCH_SIZE
+        data_shape = config.INFERENCE_PATCH_SIZE
         Hx = max(int((H+3)/4)*4, data_shape[1])
         Wx = max(int((W+3)/4)*4, data_shape[2])
         data_slice = data_shape[0]
@@ -118,56 +118,74 @@ def segment_one_image_dynamic(data, create_model_func):
     img = img[np.newaxis, ...] # add batch dim
 
     im = img
-    im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
-    im_ax = transpose_volumes(im_ax, 'axial')
-    [D, H, W] = im_ax.shape
-    if not (H <= config.PATCH_SIZE[1] and W <= config.PATCH_SIZE[2]):
-        full_data_shape = get_dynamic_shape(im_ax[0].shape)
-        dy_model_func = create_model_func[0](full_data_shape)
-        prob1_ax = batch_segmentation(im_ax, dy_model_func, data_shape=full_data_shape)
-    else:
-        dy_model_func = create_model_func[0](config.PATCH_SIZE)
-        prob1_ax = batch_segmentation(im_ax, dy_model_func, data_shape=config.PATCH_SIZE)
-    # need to take care if image size > data_shape
-
+    
     if config.MULTI_VIEW:
+        im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
+        im_ax = transpose_volumes(im_ax, 'axial')
+        [D, H, W] = im_ax.shape
+        if not (H <= config.INFERENCE_PATCH_SIZE[1] and W <= config.INFERENCE_PATCH_SIZE[2]):
+            full_data_shape = get_dynamic_shape(im_ax[0].shape)
+            dy_model_func = create_model_func[0](full_data_shape)
+            prob1_ax = batch_segmentation(im_ax, dy_model_func, data_shape=full_data_shape)
+        else:
+            dy_model_func = create_model_func[0](config.INFERENCE_PATCH_SIZE)
+            prob1_ax = batch_segmentation(im_ax, dy_model_func, data_shape=config.INFERENCE_PATCH_SIZE)
+   
         im_sa = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_sa = transpose_volumes(im_sa, 'sagittal')
         [D, H, W] = im_sa.shape
-        if not (H <= config.PATCH_SIZE[1] and W <= config.PATCH_SIZE[2]):
+        if not (H <= config.INFERENCE_PATCH_SIZE[1] and W <= config.INFERENCE_PATCH_SIZE[2]):
             full_data_shape = get_dynamic_shape(im_sa.shape)
             dy_model_func = create_model_func[1](full_data_shape)
             prob1_sa = batch_segmentation(im_sa, dy_model_func, data_shape=full_data_shape)
         else:
-            dy_model_func = create_model_func[1](config.PATCH_SIZE)
-            prob1_sa = batch_segmentation(im_sa, dy_model_func, data_shape=config.PATCH_SIZE)
+            dy_model_func = create_model_func[1](config.INFERENCE_PATCH_SIZE)
+            prob1_sa = batch_segmentation(im_sa, dy_model_func, data_shape=config.INFERENCE_PATCH_SIZE)
 
         im_co = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_co = transpose_volumes(im_co, 'coronal')
         [D, H, W] = im_co.shape
-        if not (H <= config.PATCH_SIZE[1] and W <= config.PATCH_SIZE[2]):
+        if not (H <= config.INFERENCE_PATCH_SIZE[1] and W <= config.INFERENCE_PATCH_SIZE[2]):
             full_data_shape = get_dynamic_shape(im_co.shape)
             dy_model_func = create_model_func[2](full_data_shape)
             prob1_co = batch_segmentation(im_co, dy_model_func, data_shape=full_data_shape)
         else:
-            dy_model_func = create_model_func[2](config.PATCH_SIZE)
-            prob1_co = batch_segmentation(im_co, dy_model_func, data_shape=config.PATCH_SIZE)
+            dy_model_func = create_model_func[2](config.INFERENCE_PATCH_SIZE)
+            prob1_co = batch_segmentation(im_co, dy_model_func, data_shape=config.INFERENCE_PATCH_SIZE)
 
-        pred1 = (prob1_ax + np.transpose(prob1_sa, (1,2,0,3)) + np.transpose(prob1_co, (1,0,2,3)))/ 3.0
-        pred1 = np.argmax(pred1, axis=-1)
+        prob1 = (prob1_ax + np.transpose(prob1_sa, (1,2,0,3)) + np.transpose(prob1_co, (1,0,2,3)))/ 3.0
+        pred1 = np.argmax(prob1, axis=-1)
     else:
-        pred1 = np.argmax(prob1_ax, axis=-1)
+        im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
+        im_ax = transpose_volumes(im_ax, config.DIRECTION)
+        [D, H, W] = im_ax.shape
+        if not (H <= config.INFERENCE_PATCH_SIZE[1] and W <= config.INFERENCE_PATCH_SIZE[2]):
+            full_data_shape = get_dynamic_shape(im_ax[0].shape)
+            dy_model_func = create_model_func[0](full_data_shape)
+            prob1 = batch_segmentation(im_ax, dy_model_func, data_shape=full_data_shape)
+        else:
+            dy_model_func = create_model_func[0](config.INFERENCE_PATCH_SIZE)
+            prob1 = batch_segmentation(im_ax, dy_model_func, data_shape=config.INFERENCE_PATCH_SIZE)
+        # need to take care if image size > data_shape
+
+        pred1 = np.argmax(prob1, axis=-1)
         
     pred1[pred1 == 3] = 4
     out_label = post_processing(pred1, temp_weight)
     out_label = np.asarray(out_label, np.int16)
+    if 'is_flipped' in data and data['is_flipped']:
+        out_label = np.flip(out_label, axis=-1)
+        prob1 = np.flip(prob1, axis=2) # d, h, w, num_class
+
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
-    final_probs = prob1_ax # no-use for now
+    
+    final_probs = np.zeros(temp_size + [config.NUM_CLASS], np.float32)
+    final_probs = set_ND_volume_roi_with_bounding_box_range(final_probs, temp_bbox[0]+[0], temp_bbox[1]+[3], prob1)
         
     return final_label, final_probs
 
-def segment_one_image(data, model_func):
+def segment_one_image(data, model_func, is_online=False):
     """
     Run detection on one image, using the TF callable.
     This function should handle the preprocessing internally.
@@ -184,7 +202,8 @@ def segment_one_image(data, model_func):
     temp_weight = data['weights'][:,:,:,0]
     temp_size = data['original_shape']
     temp_bbox = data['bbox']
-
+    # Ensure online evaluation match the training patch shape...should change in future 
+    batch_data_shape = config.PATCH_SIZE if is_online else config.INFERENCE_PATCH_SIZE
     
     img = img[np.newaxis, ...] # add batch dim
 
@@ -193,22 +212,22 @@ def segment_one_image(data, model_func):
     if config.MULTI_VIEW:
         im_ax = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_ax = transpose_volumes(im_ax, 'axial')
-        prob1_ax = batch_segmentation(im_ax, model_func[0], data_shape=config.INFERENCE_PATCH_SIZE)
+        prob1_ax = batch_segmentation(im_ax, model_func[0], data_shape=batch_data_shape)
 
         im_sa = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_sa = transpose_volumes(im_sa, 'sagittal')
-        prob1_sa = batch_segmentation(im_sa, model_func[1], data_shape=config.INFERENCE_PATCH_SIZE)
+        prob1_sa = batch_segmentation(im_sa, model_func[1], data_shape=batch_data_shape)
 
         im_co = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_co = transpose_volumes(im_co, 'coronal')
-        prob1_co = batch_segmentation(im_co, model_func[2], data_shape=config.INFERENCE_PATCH_SIZE)
+        prob1_co = batch_segmentation(im_co, model_func[2], data_shape=batch_data_shape)
 
         prob1 = (prob1_ax + np.transpose(prob1_sa, (1, 2, 0, 3)) + np.transpose(prob1_co, (1, 0, 2, 3))) / 3.0
         pred1 = np.argmax(prob1, axis=-1)
     else:
         im_pred = np.transpose(im[0], [3, 0 ,1, 2]) # mod, d, h, w
         im_pred = transpose_volumes(im_pred, config.DIRECTION)
-        prob1 = batch_segmentation(im_pred, model_func[0], data_shape=config.INFERENCE_PATCH_SIZE)
+        prob1 = batch_segmentation(im_pred, model_func[0], data_shape=batch_data_shape)
         if config.DIRECTION == 'sagittal':
             prob1 = np.transpose(prob1, (1, 2, 0, 3))
         elif config.DIRECTION == 'coronal':

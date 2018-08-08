@@ -12,7 +12,7 @@ dice_loss, generalised dice_loss, residual connection, instance norm, deep super
 
 ## Dependencies
 + Python 3; TensorFlow >= 1.4
-+ Tensorpack@0.8.2 (https://github.com/tensorpack/tensorpack)
++ Tensorpack@0.8.5 (https://github.com/tensorpack/tensorpack)
 (pip install -U git+https://github.com/ppwwyyxx/tensorpack.git@0.8.5)
 + BRATS2017 or BRATS2018 data. It needs to have the following directory structure:
 ```
@@ -58,6 +58,7 @@ python3 train.py --load=./train_log/unet3d/model-30000 --gpu 0 --predict
 ## Results
 The detailed parameters and training settings.
 The results are derived from Brats2018 online evaluation on Validation Set.
+## Single Model
 ### Setting 1:
 Unet3d, num_filters=32 (all), depth=3, sampling=one_positive
 + PatchSize = [5, 20, 144, 144] per gpu, num_gpus = 2, epochs = 40
@@ -110,14 +111,28 @@ Introduced by [Automatic Brain Tumor Segmentation using Cascaded Anisotropic Con
 
 ### Test-Time augmentation:
 Testing with image augmentation to improve model robustness.
-Flip: Predicting on original image and horizontal flipped image and average the prediction prob.
++ Flip: Predicting on original image and horizontal flipped image and average the prediction prob.
 
 | Setting | Dice_ET | Dice_WT | Dice_TC |
 | --- | --- | --- | --- |
 | 8+Flip | 0.73 | 0.88 | 0.81 |
 | 8*+Flip | 0.77 | 0.88 | 0.82 |
-| Multi-View |  |  |  |
+| Multi-View* | 0.78 | 0.89 | 0.81 |
+| Multi-View*+Flip | 0.78 | 0.89 | 0.82 |
 
 p.s. * means advanced post-processing
+
+## Preprocessing
+## Zero Mean Unit Variance (default)
+Normalize each modality with zero mean and unit variance within brain region
+## Bias Correction
+Details in [Tustison, Nicholas J., et al. "N4ITK: improved N3 bias correction." IEEE transactions on medical imaging 29.6 (2010): 1310-1320.](https://ieeexplore.ieee.org/abstract/document/5445030/)
+
+| Setting | Dice_ET | Dice_WT | Dice_TC |
+| --- | --- | --- | --- |
+| N4+8+Flip |  |  |  |
+| N4+8*+Flip |  |  |  |
+
+Using preprocess.py to convert Brats data into corrected image. Will take one days to process 200+ files. (multi-threading could help) 
 ## Notes
 Results for brats2018 will be updated and more experiments will be included. [2018/8/3]

@@ -18,7 +18,7 @@ FILTER_GROW = True
 INSTANCE_NORM = True
 # Use multi-view fusion 3 models for 3 view must be trained
 DIRECTION = 'axial' # axial, sagittal, coronal
-MULTI_VIEW = True
+MULTI_VIEW = False
 
 # training config
 BASE_LR = 0.001
@@ -45,7 +45,7 @@ DYNAMIC_SHAPE_PRED = False
 ADVANCE_POSTPROCESSING = True
 BATCH_SIZE = 2
 PATCH_SIZE = [128, 128, 128]
-INFERENCE_PATCH_SIZE = [128, 160, 160]
+INFERENCE_PATCH_SIZE = [128, 128, 128]
 INTENSITY_NORM = 'modality' # different norm method
 STEP_PER_EPOCH = 500
 EVAL_EPOCH = 10
