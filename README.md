@@ -1,7 +1,7 @@
 # 3DUnet-Tensorflow
 
 ![Tumor Segmentation Example](gifs/raw_image.gif)
-
+![Tumor Segmentation Label](gifs/prediction.gif)
 
 3D Unet biomedical segmentation model powered by tensorpack with fast io speed.
 
