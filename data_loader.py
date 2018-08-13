@@ -73,7 +73,8 @@ class BRATS_SEG(object):
             imgs = img_HGG + img_LGG
         else:
             imgs = glob.glob(self.basedir+"/*")
-
+        imgs = [x for x in imgs if 'survival_evaluation.csv' not in x]
+        
         patient_ids = [x.split("/")[-1] for x in imgs]
         ret = []
         print("Preprocessing Data ...")
@@ -84,7 +85,7 @@ class BRATS_SEG(object):
             data['id'] = patient_ids[idx]
             # read modality
             mod = glob.glob(file_name+"/*.nii*")
-            assert len(mod) >= 4  # 4mod +1gt
+            assert len(mod) >= 4, '{}'.format(file_name)  # 4mod +1gt
             for m in mod:
                 if 'seg' in m:
                     data['gt'] = m
@@ -93,7 +94,7 @@ class BRATS_SEG(object):
                     data['image_data'][_m] = m
             
             if 'gt' in data:
-                if not config.NO_CACHE:
+                if not config.NO_CACHE and not 'training' in self.basedir:
                     data['preprocessed'] = crop_brain_region(data['image_data'], data['gt'])
                     del data['image_data']
                     del data['gt']

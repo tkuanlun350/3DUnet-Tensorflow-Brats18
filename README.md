@@ -1,4 +1,8 @@
 # 3DUnet-Tensorflow
+
+![Tumor Segmentation Example](gifs/raw_image.gif)
+
+
 3D Unet biomedical segmentation model powered by tensorpack with fast io speed.
 
 Borrow a lot of codes from https://github.com/taigw/brats17/. I improved the pipeline and using tensorpack's dataflow for faster io speed. Currently it takes around 7 minutes for 500 iterations with patch size [5 X 20 X 144 X 144]. You can achieve reasonable results within 40 epochs (more gpu will also reduce your training time.)
@@ -14,15 +18,14 @@ dice_loss, generalised dice_loss, residual connection, instance norm, deep super
 + Python 3; TensorFlow >= 1.4
 + Tensorpack@0.8.5 (https://github.com/tensorpack/tensorpack)
 (pip install -U git+https://github.com/ppwwyyxx/tensorpack.git@0.8.5)
-+ BRATS2017 or BRATS2018 data. It needs to have the following directory structure:
++ BRATS2017 or BRATS2018 data. It needs to have the following directory structure (you can also add your own validation data and test data, just to modify the path in config):
++ (Optional) If you want to use [Bias Correction](https://ieeexplore.ieee.org/abstract/document/5445030/) you have to install nipype and ANTs (see preprocess.py)
 ```
 DIR/
   training/
     HGG/
     LGG/
   val/
-    BRATS*.nii.gz
-  test/
     BRATS*.nii.gz
 ```
 ## Data
@@ -66,19 +69,19 @@ Unet3d, num_filters=32 (all), depth=3, sampling=one_positive
 ### Setting 2:
 Unet3d, num_filters=32 (all), depth=3, sampling=one_positive
 + PatchSize = [2, 128, 128, 128] pre gpu, num_gpus = 2, epochs = 40
-+ Lr = 0.01, num_step=500, epoch time = 20:35(min), total_training_time ~ 10 hours
++ Lr = 0.01, num_step=500, epoch time = 20:35(min), total_training_time ~ 8 hours
 ### Setting 3
 Unet3d, num_filters=16~256, sampling=one_positive, **depth=5**, **residual**
 + PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
-+ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 8 hours
 ### Setting 4:
 Unet3d, num_filters=16~256, **depth=5**, **residual** **InstanceNorm**, **sampling=random**
 + PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
-+ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 8 hours
 ### Setting 5:
 Unet3d, num_filters=16~256, **depth=5**, **residual**, **InstanceNorm**, **sampling=one_positive**
 + PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
-+ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 10 hours
++ Lr = 0.001, num_step=500, epoch time = 20(min), total_training_time ~ 8 hours
 ### Setting 6:
 Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**,     **InstanceNorm**, **sampling=one_positive**
 + PatchSize = [2, 128, 128, 128], num_gpus = 1, epochs = 20
@@ -109,6 +112,8 @@ Unet3d, num_filters=16~256, **depth=5**, **residual**, **deep-supervision**, **I
 ### Multi-View:
 Introduced by [Automatic Brain Tumor Segmentation using Cascaded Anisotropic Convolutional Neural Networks](https://github.com/taigw/brats17/). Trained with axial, sagittal and coronal and then average the prediction prob.
 
+Currently only support manually set path for each model (see train.py after line 147.)
+
 ### Test-Time augmentation:
 Testing with image augmentation to improve model robustness.
 + Flip: Predicting on original image and horizontal flipped image and average the prediction prob.
@@ -130,8 +135,8 @@ Details in [Tustison, Nicholas J., et al. "N4ITK: improved N3 bias correction." 
 
 | Setting | Dice_ET | Dice_WT | Dice_TC |
 | --- | --- | --- | --- |
-| N4+8+Flip |  |  |  |
-| N4+8*+Flip |  |  |  |
+| N4+8*+Flip | 0.76 | 0.87 | 0.80 |
+| Multi-View*+N4+Flip | 0.76 | 0.89 | 0.80 |
 
 Using preprocess.py to convert Brats data into corrected image. Will take one days to process 200+ files. (multi-threading could help) 
 ## Notes
