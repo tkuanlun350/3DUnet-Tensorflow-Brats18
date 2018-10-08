@@ -180,23 +180,14 @@ def segment_one_image_dynamic(data, create_model_func):
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
     
-    final_probs = np.zeros(temp_size + [config.NUM_CLASS], np.float32)
+    final_probs = np.zeros(list(temp_size) + [config.NUM_CLASS], np.float32)
     final_probs = set_ND_volume_roi_with_bounding_box_range(final_probs, temp_bbox[0]+[0], temp_bbox[1]+[3], prob1)
         
     return final_label, final_probs
 
 def segment_one_image(data, model_func, is_online=False):
     """
-    Run detection on one image, using the TF callable.
-    This function should handle the preprocessing internally.
-
-    Args:
-        img: an image
-        model_func: a callable from TF model,
-            takes image and returns (boxes, probs, labels, [masks])
-
-    Returns:
-        [DetectionResult]
+    perform inference and unpad the volume to original shape
     """
     img = data['images']
     temp_weight = data['weights'][:,:,:,0]
@@ -251,7 +242,7 @@ def segment_one_image(data, model_func, is_online=False):
     final_label = np.zeros(temp_size, np.int16)
     final_label = set_ND_volume_roi_with_bounding_box_range(final_label, temp_bbox[0], temp_bbox[1], out_label)
 
-    final_probs = np.zeros(temp_size + [config.NUM_CLASS], np.float32)
+    final_probs = np.zeros(list(temp_size) + [config.NUM_CLASS], np.float32)
     final_probs = set_ND_volume_roi_with_bounding_box_range(final_probs, temp_bbox[0]+[0], temp_bbox[1]+[3], prob1)
         
     return final_label, final_probs
@@ -279,12 +270,7 @@ def dice_of_brats_data_set(gt, pred, type_idx):
 
 def eval_brats(df, detect_func, with_gt=True):
     """
-    Args:
-        df: a DataFlow which produces (image, image_id)
-        detect_func: a callable, takes [image] and returns [DetectionResult]
-
-    Returns:
-        list of dict, to be dumped to COCO json format
+    evalutation
     """
     df.reset_state()
     gts = []
@@ -324,12 +310,7 @@ def eval_brats(df, detect_func, with_gt=True):
 
 def pred_brats(df, detect_func):
     """
-    Args:
-        df: a DataFlow which produces (image, image_id)
-        detect_func: a callable, takes [image] and returns [DetectionResult]
-
-    Returns:
-        list of dict, to be dumped to COCO json format
+    prediction
     """
     df.reset_state()
     gts = []
